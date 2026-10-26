@@ -504,6 +504,77 @@ test('when in strict mode with inexact parsing, treat periods in min-weekdays li
     assert.equal(moment('thurs', 'dd', true).format('dddd'), 'Thursday');
 });
 
+test('locale names that look like file system paths are not loaded', function (assert) {
+    var oldDeprecationHandler = moment.deprecationHandler,
+        deprecations = [];
+
+    function definedLocales() {
+        return moment.locales().slice().sort().join(',');
+    }
+
+    function assertNotLoaded(message, load) {
+        var before = definedLocales();
+        load();
+        assert.equal(moment.locale(), 'en', message + ': global locale is not changed');
+        assert.equal(definedLocales(), before, message + ': no locale is loaded');
+    }
+
+    // Re-defining an already loaded locale reports a deprecation, record it
+    // instead of throwing (a throw would be swallowed while loading).
+    moment.deprecationHandler = function (name, msg) {
+        deprecations.push(name || msg);
+    };
+
+    try {
+        moment.locale('en');
+
+        assertNotLoaded('moment.locale', function () {
+            moment.locale('../locale/yo');
+        });
+
+        assertNotLoaded('moment.localeData', function () {
+            assert.equal(moment.localeData('../locale/mi')._abbr, 'en',
+                    'localeData falls back to the global locale');
+        });
+
+        assertNotLoaded('moment#locale', function () {
+            assert.equal(moment().locale('../locale/tet').locale(), 'en',
+                    'instance locale is not changed');
+        });
+
+        assertNotLoaded('moment.updateLocale', function () {
+            moment.updateLocale('../locale/sd', {});
+            moment.updateLocale('../locale/sd', null);
+            moment.locale('en');
+        });
+
+        assertNotLoaded('moment.defineLocale parentLocale', function () {
+            assert.equal(moment.defineLocale('path-like-parent', {parentLocale: '../locale/tg'}), null,
+                    'child of a missing parentLocale is not defined');
+            moment.locale('en');
+        });
+
+        each(['..\\locale\\tlh',
+                '..\\..\\..\\..\\..\\..\\..\\..\\..\\..\\windows\\win.ini',
+                '/etc/passwd',
+                './../../../../../../../../../../etc/passwd'], function (name) {
+            assertNotLoaded('moment.locale ' + name, function () {
+                moment.locale(name);
+            });
+        });
+
+        // traversal outside of the locale directory, loads every locale if followed
+        assertNotLoaded('moment.locale ../min/locales', function () {
+            moment.locale('../min/locales');
+        });
+
+        assert.deepEqual(deprecations, [], 'no locale is re-defined from the file system');
+    } finally {
+        moment.deprecationHandler = oldDeprecationHandler;
+        moment.locale('en');
+    }
+});
+
 
 // TODO: Enable this after fixing pl months parse hack hack
 // test('monthsParseExact', function (assert) {
