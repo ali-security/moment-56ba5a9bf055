@@ -35,6 +35,7 @@ module.exports = function (grunt) {
                 done(err);
                 return;
             }
+            console.log('qtest summary: ' + report.tests + ' tests run, ' + report.passed + ' of ' + report.assertions + ' assertions passed, ' + report.failed + ' assertions failed');
             err = null;
             if (report.failed !== 0) {
                 err = new Error(report.failed + ' tests failed');

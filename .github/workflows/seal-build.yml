@@ -1,0 +1,86 @@
+name: seal-build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '8.11.2'
+
+      - name: Use the publisher's npm and the release-date registry
+        run: |
+          npm install -g npm@6.4.1
+          npm config set registry https://time-machines-npm.sealsecurity.io/
+          npm config set //time-machines-npm.sealsecurity.io/:_authToken=2019-01-21T21:10:34.169Z
+          node -v
+          npm -v
+
+      - name: Install the lockfile-pinned devDependencies (grunt, grunt-contrib-uglify, uglify-js)
+        run: npm install --ignore-scripts
+
+      - name: Regenerate the minified bundles with upstream's Gruntfile uglify:main task
+        # moment.js -> min/moment.min.js, min/moment-with-locales.js -> min/moment-with-locales.min.js,
+        # min/locales.js -> min/locales.min.js, so the shipped *.min.js always carry the committed bundles' code.
+        run: ./node_modules/.bin/grunt uglify:main
+
+      - name: Stage the npm package with upstream's scripts/npm_prepublish.sh
+        run: bash scripts/npm_prepublish.sh HEAD
+
+      - name: Ship the regenerated minified bundles
+        # npm_prepublish.sh stages from a git clone of HEAD, so copy the freshly built files over the staged ones.
+        run: cp min/moment.min.js min/moment-with-locales.min.js min/locales.min.js ../moment-npm/min/
+
+      - name: Pack
+        run: |
+          cd ../moment-npm
+          npm pack
+          mkdir -p "$GITHUB_WORKSPACE/seal-dist"
+          mv moment-*.tgz "$GITHUB_WORKSPACE/seal-dist/"
+          ls -l "$GITHUB_WORKSPACE/seal-dist"
+
+      - name: Check the packed minified bundles match their source bundles
+        run: |
+          set -e
+          work=$(mktemp -d)
+          tar -xzf seal-dist/moment-*.tgz -C "$work"
+          echo "tarball members: $(tar -tzf seal-dist/moment-*.tgz | wc -l)"
+          count() { MARKER="$1" awk 'index($0, ENVIRON["MARKER"]) { n++ } END { print n + 0 }' "$2"; }
+          check() {
+            src="$1"; min="$2"
+            cmp "$work/package/$min" "$min"
+            # uglify mangles local function names (isLocaleNameSane), so match the guard's regex literal instead.
+            for marker in '^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$' '\([^()]*\)'; do
+              s=$(count "$marker" "$src")
+              m=$(count "$marker" "$work/package/$min")
+              echo "$min: '$marker' source=$s packed=$m"
+              if [ "$s" -gt 0 ] && [ "$m" -eq 0 ]; then echo "packed $min lacks '$marker' present in $src"; exit 1; fi
+            done
+            for gone in '^[^/\\\\]*$' '\([^)]*\)'; do
+              s=$(count "$gone" "$src")
+              m=$(count "$gone" "$work/package/$min")
+              echo "$min: replaced '$gone' source=$s packed=$m"
+              if [ "$s" -eq 0 ] && [ "$m" -gt 0 ]; then echo "packed $min still carries '$gone'"; exit 1; fi
+            done
+          }
+          check moment.js min/moment.min.js
+          check min/moment-with-locales.js min/moment-with-locales.min.js
+          check min/locales.js min/locales.min.js
+
+      - name: Check every shipped bundle rejects crafted locale names (CVE-2026-17495)
+        run: |
+          work=$(mktemp -d)
+          tar -xzf seal-dist/moment-*.tgz -C "$work"
+          node .github/seal-verify-locale.js "$work/package"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moment-npm-tgz
+          path: seal-dist/moment-*.tgz
+          if-no-files-found: error

@@ -1,6 +1,6 @@
 language: node_js
 node_js:
-  - "node"
+  - "11"
   - "8"
   - "7"
   - "6"
@@ -13,13 +13,15 @@ env:
     - secure: "M4STT2TOZxjzv3cZOgSVi0J4j6enrGjgE+p5YTNUw+S6Dg6FS5pTIPeafu1kGhfm7F0uk7xPVwGKYb+3uWNO9IhkKXz8jySMMQ2iKISHwECGNNuFNjSMD1vIjbIkLwV8TyPO/PurQg2s+WtYz+DoAZsDFKpdaRUtif64OjdQ3vQ="
     - secure: "V+i7kHoGe7VXWGplPNqJz+aDtgDF9Dh9/guoaf2BPyXLvkFW6VgMjJyoNUW7JVsakrWzAz2ubb734vAPDt7BCcFQ2BqfatOmabdFogviCaXC6IqVaEkYS2eSP7MIUPIeWJgnTrDGzkFMDk4K7y5SiVJ8UmYwZxe+tJV7kbb0Yig="
 
-before_install: if [[ `npm -v` == 2* ]]; then npm i -g npm@3; fi
+before_install:
+  - npm config set registry https://:2019-01-21T21%3A10%3A34.169Z@time-machines-npm.sealsecurity.io/
+  - if [[ `npm -v` == 2* ]]; then npm i -g npm@3 --registry=https://:2019-01-21T21%3A10%3A34.169Z@time-machines-npm.sealsecurity.io/; fi
 
 install:
   - npm install
   - npm install -g grunt-cli
 
-script: grunt build:travis
+script: grunt test
 
 git:
   depth: 10
