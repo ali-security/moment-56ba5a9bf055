@@ -492,7 +492,8 @@ test('parsing RFC 2822', function (assert) {
 test('non RFC 2822 strings', function (assert) {
     var testCases = {
         'RFC2822 datetime with all options but invalid day delimiter': 'Tue. 01 Nov 2016 01:23:45 GMT',
-        'RFC2822 datetime with mismatching Day (weekday v date)': 'Mon, 01 Nov 2016 01:23:45 GMT'
+        'RFC2822 datetime with mismatching Day (weekday v date)': 'Mon, 01 Nov 2016 01:23:45 GMT',
+        'RFC2822 datetime with an unbalanced comment': 'Tue, 01 Nov 2016 01:23:45 GMT ((x)'
     };
     var testCase;
 
@@ -500,6 +501,39 @@ test('non RFC 2822 strings', function (assert) {
         var testResult = moment(testCases[testCase], moment.RFC_2822, true);
         assert.ok(!testResult.isValid(), testCase + ': ' + testResult + ' - is invalid rfc2822');
         assert.ok(!testResult.parsingFlags().rfc2822, testCase + ': ' + testResult + ' - rfc2822 parsingFlag');
+    }
+});
+
+test('parsing RFC 2822 comments is not vulnerable to ReDoS', function (assert) {
+    var oldCreateFromInputFallback = moment.createFromInputFallback,
+        payloads = {
+            'open parentheses': new Array(100001).join('('),
+            'unclosed comments': new Array(50001).join('(a')
+        },
+        payload, start, duration, result;
+
+    // Strings that are neither ISO 8601 nor RFC 2822 end up in the input
+    // fallback, keep it from throwing so the default parsing path can be timed.
+    moment.createFromInputFallback = function (config) {
+        config._d = new Date(NaN);
+    };
+
+    try {
+        for (payload in payloads) {
+            start = new Date().getTime();
+            result = moment(payloads[payload], moment.RFC_2822, true);
+            duration = new Date().getTime() - start;
+            assert.ok(!result.isValid(), payload + ' - is invalid rfc2822');
+            assert.ok(duration < 2000, payload + ' - rfc2822 parsing took ' + duration + 'ms');
+
+            start = new Date().getTime();
+            result = moment(payloads[payload]);
+            duration = new Date().getTime() - start;
+            assert.ok(!result.isValid(), payload + ' - is invalid');
+            assert.ok(duration < 2000, payload + ' - default parsing took ' + duration + 'ms');
+        }
+    } finally {
+        moment.createFromInputFallback = oldCreateFromInputFallback;
     }
 });
 
