@@ -575,6 +575,133 @@ test('locale names that look like file system paths are not loaded', function (a
     }
 });
 
+test('do not load invalid built-in locale names', function (assert) {
+    var invalidNames = ['.', '..', 'locale name', 'en@gb'];
+
+    each(invalidNames, function (name) {
+        moment.localeData(name);
+        assert.equal(
+            indexOf.call(moment.locales(), name),
+            -1,
+            'does not cache invalid locale name "' + name + '"'
+        );
+    });
+});
+
+test('do not load locales from crafted non-string names', function (assert) {
+    var payloads = [
+            '../min/locales',
+            '../../../../../../../../../../etc/passwd',
+            '..\\..\\..\\..\\etc\\passwd',
+        ],
+        candidates = ['tzm-latn', 'tzm', 'ug-cn', 'uz-latn', 'yo', 'mi', 'dv'],
+        // `module` is QUnit's here, so detect Node through `process` instead.
+        nodeModule =
+            typeof require === 'function' &&
+            typeof process !== 'undefined' &&
+            process.versions &&
+            process.versions.node
+                ? require('module')
+                : null,
+        originalLoad = nodeModule ? nodeModule._load : null,
+        requested = [],
+        localeCount,
+        unloaded = null,
+        i;
+
+    if (nodeModule) {
+        // Record every module request moment makes while the payloads are fed in.
+        nodeModule._load = function (request) {
+            requested.push(String(request));
+            return originalLoad.apply(this, arguments);
+        };
+    }
+
+    try {
+        moment.locale('en');
+        localeCount = moment.locales().length;
+
+        each(payloads, function (payload) {
+            // Satisfies the old `name.match(...)` check, survives normalization
+            // as a non-string and stringifies to a path when appended to './locale/'.
+            var crafted = {
+                match: function () {
+                    return ['ok'];
+                },
+                toLowerCase: function () {
+                    return crafted;
+                },
+                replace: function () {
+                    return crafted;
+                },
+                split: function () {
+                    return [payload];
+                },
+                toString: function () {
+                    return payload;
+                },
+            };
+
+            moment.locale(crafted);
+            moment.localeData(crafted);
+            moment.defineLocale('crafted-child', { parentLocale: crafted });
+            moment.defineLocale('crafted-child', null);
+            moment.locale('en');
+
+            assert.equal(
+                moment.locales().length,
+                localeCount,
+                'does not load any module for "' + payload + '"'
+            );
+            assert.equal(
+                indexOf.call(moment.locales(), payload),
+                -1,
+                'does not cache "' + payload + '" as a locale'
+            );
+        });
+
+        if (nodeModule) {
+            assert.deepEqual(
+                requested.filter(function (request) {
+                    return request.indexOf('locale/') !== -1;
+                }),
+                [],
+                'crafted names never reach require()'
+            );
+
+            // A plain string locale that is not loaded yet still goes through require().
+            for (i = 0; i < candidates.length; i++) {
+                if (indexOf.call(moment.locales(), candidates[i]) === -1) {
+                    unloaded = candidates[i];
+                    break;
+                }
+            }
+            if (unloaded !== null) {
+                requested = [];
+                assert.equal(
+                    moment.localeData(unloaded)._abbr,
+                    unloaded,
+                    'lazy-loads the string locale "' + unloaded + '"'
+                );
+                assert.ok(
+                    indexOf.call(requested, './locale/' + unloaded) !== -1,
+                    'requires ./locale/' + unloaded + ' for a string name'
+                );
+            }
+        }
+        assert.equal(
+            moment.localeData('fr')._abbr,
+            'fr',
+            'string locales still load'
+        );
+    } finally {
+        if (nodeModule) {
+            nodeModule._load = originalLoad;
+        }
+        moment.locale('en');
+    }
+});
+
 
 // TODO: Enable this after fixing pl months parse hack hack
 // test('monthsParseExact', function (assert) {

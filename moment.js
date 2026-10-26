@@ -1843,8 +1843,9 @@
     }
 
     function isLocaleNameSane(name) {
-        // Prevent names that look like filesystem paths, i.e contain '/' or '\'
-        return name.match('^[^/\\\\]*$') != null;
+        // Only locale module names are safe to append to the require path. Upper case is
+        // allowed because 2.24.0 still ships locale/en-SG.js.
+        return typeof name === 'string' && /^[a-zA-Z0-9]+(?:-[a-zA-Z0-9]+)*$/.test(name);
     }
 
     function loadLocale(name) {
